@@ -83,8 +83,10 @@ fn main(){
         println!("Please enter the right choice");
     }
 
-    Command::new("qbittorrent")
+    let _ =Command::new("aria2c")
+        .arg("-x8")
         .arg("downloaded.torrent")
-        .output()
-        .expect("Failed to execute process");
+        .spawn()
+        .expect("Failed to execute process")
+        .wait();
 }
