@@ -3,6 +3,75 @@ use std::fs::File;
 use scraper::{Html, Selector};
 use std::process::Command;
 
+
+fn get_torrent_files() -> Vec<(usize, String)> {
+    println!("--- DEBUG: Running aria2c --show-files ---");
+
+    let output = Command::new("aria2c")
+        .arg("--show-files")
+        .arg("downloaded.torrent")
+        .output()
+        .expect("Failed to run aria2c --show-files");
+
+    println!("--- DEBUG: aria2c exited with status: {:?}", output.status);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("--- DEBUG: Raw aria2c output start ---");
+    println!("{}", stdout);
+    println!("--- DEBUG: Raw aria2c output end ---");
+
+    let mut files = Vec::new();
+
+    println!("--- DEBUG: Starting line-by-line parse ---");
+
+    for (line_number, line) in stdout.lines().enumerate() {
+        println!("DEBUG Line {}: '{}'", line_number, line);
+
+        let line = line.trim();
+        if line.is_empty() {
+            println!("  -> Skipped (empty)");
+            continue;
+        }
+
+        // Debug split
+        let parts: Vec<&str> = line.split('|').collect();
+        println!("  -> Split parts: {:?}", parts);
+
+        if parts.len() == 2 {
+            let idx_str = parts[0].trim();
+            let path_str = parts[1].trim();
+            println!("  -> idx_str='{}', path_str='{}'", idx_str, path_str);
+
+            if let Ok(idx) = idx_str.parse::<usize>() {
+                println!("  -> Parsed idx OK = {}", idx);
+
+                // Debug the filtering logic
+                let matches_path = path_str.starts_with("./")
+                    || path_str.ends_with(".mkv")
+                    || path_str.ends_with(".mp4")
+                    || path_str.ends_with(".avi");
+
+                println!("  -> Path matches filtering rules? {}", matches_path);
+
+                if matches_path {
+                    println!("  -> ADDED FILE ({}, '{}')", idx, path_str);
+                    files.push((idx, path_str.to_string()));
+                } else {
+                    println!("  -> Rejected by filtering");
+                }
+            } else {
+                println!("  -> idx_str failed to parse as usize");
+            }
+        } else {
+            println!("  -> Not a valid aria2c file line");
+        }
+    }
+
+    println!("--- DEBUG: Final file list = {:?} ---", files);
+
+    files
+}
+
 fn main(){
     let base_url = "https://nyaa.si";
     let search_url = "?q=";
@@ -83,10 +152,38 @@ fn main(){
         println!("Please enter the right choice");
     }
 
-    let _ =Command::new("aria2c")
-        .arg("-x8")
+    let files = get_torrent_files();
+
+    if files.is_empty() {
+        println!("No files found in torrent!");
+        return;
+    }
+
+    println!("\nFiles inside torrent:");
+    for (i, (idx, name)) in files.iter().enumerate() {
+        println!("{}: {}", idx, name);
+    }
+
+    println!("Enter episode/file index to download:");
+    let mut ep_choice = String::new();
+    io::stdin().read_line(&mut ep_choice).unwrap();
+    let ep_idx: usize = ep_choice.trim().parse().unwrap_or(0);
+
+    if ep_idx == 0 || ep_idx > files.len() {
+        println!("Invalid selection!");
+        return;
+    }
+
+    println!("Downloading file index {}...", ep_idx);
+
+    Command::new("aria2c")
+        .arg("--select-file")
+        .arg(format!("{}", ep_idx))
         .arg("downloaded.torrent")
         .spawn()
-        .expect("Failed to execute process")
-        .wait();
+        .expect("Failed running aria2c")
+        .wait()
+        .unwrap();
+    
+        
 }
